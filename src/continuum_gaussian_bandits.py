@@ -10,25 +10,32 @@ class ContinuumArmedBandit:
         self.y = y
         self.gpr = GPR(self.X, self.y, convergence_rate=convergence_rate)
         self.N = self.X.shape[0]
-        self.alpha = None
-        self.gamma = None
+
+        self.alpha = self.calc_alpha(self.gpr.K, self.gpr.noise_var, self.y)
+        self.gamma = self.calc_gamma(self.gpr.K, self.gpr.noise_var, self.X)
 
     def select_action(self):
-        K = self.gpr.K
-        noise_var = self.gpr.noise_var
-        self.alpha = self.calc_alpha(K, noise_var, self.y)
-        self.gamma = self.calc_gamma(K, noise_var, self.X)
         x = self.get_x_best(self.X)
         return x
-        
+    
+    def update(self, X, y)
+        self.X = self.X.append(X)
+        self.y = self.y.append(y)
+        self.gpr = GPR(self.X, self.y, convergence_rate=convergence_rate)
+        self.N = self.X.shape[0]
+
+        self.alpha = self.calc_alpha(self.gpr.K, self.gpr.noise_var, self.y)
+        self.gamma = self.calc_gamma(self.gpr.K, self.gpr.noise_var, self.X)
+
     def get_x_best(self, X):
         merit_best = 0
         x_best = None
         for j in range(self.N):
             x = X[j]
+            temp_x = x
             for i in range(10):
-                s = self.get_s(x, X)
-                x = x + x
+                s = self.get_s(temp_x, X)
+                temp_x = temp_x + x
             x_merit = self.get_merit(x, X)
             if x_merit > merit_best:
                 x_best = x
@@ -66,6 +73,16 @@ class ContinuumArmedBandit:
         var = self.get_std(x, X)
         merit = mean + var
         return merit
+    
+    def predict(self, x_arr):
+        val_pred = []
+        val_var = []
+        for x in x_arr:
+            mean = self.get_mean(x, self.X)
+            var = self.get_std(x, self.X)
+            val_pred.append(mean)
+            val_var.append(var)
+        return val_pred, val_var
 
     def get_mean(self, x, X):
         mean = 0
@@ -153,6 +170,9 @@ class GPR(GaussianProcessRegressor):
 
     def update_W(self):
         length_scales = self.kernel_.get_params()['k1__length_scale']
+        if X.shape[1] == 1:
+            length_scales = np.array([length_scales]) # length scales is a singular number, because X is a one dimensional dataset, hence we make it into an array
+            
         w = 1.0 / np.power(length_scales, 2)
         W = np.diag(w)
         self.W = W
@@ -173,4 +193,23 @@ class GPR(GaussianProcessRegressor):
     def k_prime_prime(self, x1, x2):
         k_prime_prime_x1x2 = self.converge_rate_sq * np.exp(-1.0/6.0 * (x1 - x2).T.dot(self.W).dot(x1 - x2))
         return k_prime_prime_x1x2
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    n = 30
+    X = np.atleast_2d(4 * np.random.rand(n)).T
+    y = np.cos(X) + 0.1 * np.random.randn(n, 1)
+    
+    test_x = np.linspace(0, 2 * np.pi)
+    gpbandit = ContinuumArmedBandit(X, y)
+    
+    pred, ci = gpbandit.predict(np.atleast_2d(test_x).T)
+    pred = np.squeeze(pred)  # There is only one output dimension.
+    ci = np.squeeze(ci)
+    
+    plt.fill_between(test_x, pred - ci, pred + ci, color=(0.8, 0.8, 1.0))
+    plt.plot(test_x, pred)
+    plt.scatter(X, y)
+    plt.show()
 
