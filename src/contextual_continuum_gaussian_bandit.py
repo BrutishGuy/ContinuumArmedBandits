@@ -7,6 +7,7 @@ from sklearn.metrics import mean_squared_error
 import dill 
 import argparse
 
+from google.cloud import bigquery
 
 class ContextualContinuumArmedBandit:
     """
@@ -271,7 +272,123 @@ class ContextualContinuumArmedBandit:
             except:
                 print("ERROR: Unsampled or unseen context, please update or re-fit the model with the context included.")
                 raise
-            
+      
+def train_gcp(dataset_name, model_path, gcp_creds):
+    """
+    Example usage of models, oracle models etc.training them using a locally downloaded CSV file in the form of the JOT Google Ads
+    file data schema (see ./docs/data_docs/). We preprocess the raw docs in the form that it is done to put it into the BigQuery ProductionProcessedData table
+    
+    Trains a catboost oracle model and then trains a bandit using this model.
+
+    Additional fitting can be done via the fit_rounds, set to 0, or add more.
+    
+    Parameters
+    ----------
+    dataset_name : str
+        Example BigQuery table reference of the form JOT Google Ads export
+        Example is 'RawData.OperationalRawData'
+    model_endpoint_path : str
+        Example model endpoint path via the Endpoints API on Vertex AI. This is the full path including trained ID.
+    gcp_cred : dict 
+        This is a dictionary with your GCP credentials, see docs for example.
+
+    Returns
+    -------
+
+    """
+    bqclient = bigquery.Client()
+
+    # Download a table.
+    table = bigquery.TableReference.from_string(
+        dataset_name
+    )
+    rows = bqclient.list_rows(
+        table,
+        selected_fields=[
+            bigquery.SchemaField("country_name", "STRING"),
+            bigquery.SchemaField("fips_code", "STRING"),
+        ],
+    )
+    df = rows.to_dataframe(
+        # Optionally, explicitly request to use the BigQuery Storage API. As of
+        # google-cloud-bigquery version 1.26.0 and above, the BigQuery Storage
+        # API is used by default.
+        create_bqstorage_client=True)
+    df.columns = [client_id,
+                  campaign_id,
+                  group_id,
+                  account_descriptive_name,
+                  ad_network_type,
+                  avg_position,
+                  campaign_name,
+                  city_criteria_id,
+                  clicks,
+                  cost,
+                  impressions,
+                  country_criteria_id,
+                  date,
+                  device,
+                  external_customer_id,
+                  metro_criteria_id,
+                  region_criteria_id]
+
+    df['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d')
+    df['week_day'] = df['date'].dt.day_name()
+    df['week_num'] = df['date'].dt.week
+    
+    id_fields = ['client_id', 'campaign_id', 'group_id', 'city_criteria_id',
+           'country_criteria_id', 'external_customer_id', 'metro_criteria_id',
+           'region_criteria_id']
+    
+    df[id_fields] = df[id_fields].astype(object)
+    
+    group_by_fields = ['client_id',
+    'external_customer_id',
+    'group_id', 
+    'account_descriptive_name', 
+    'ad_network_type',
+    'campaign_id', 
+    'campaign_name',  
+    'week_day',
+    'week_num']
+    
+    
+    df_grouped = df.groupby(group_by_fields).agg({'clicks': ['mean', 'sum'], 'impressions': 'sum', 'cost': ['mean', 'sum']}).reset_index()
+    df_grouped.columns = ["_".join(a) for a in df_grouped.columns.to_flat_index()]
+    df_grouped['cost_sum'] = df_grouped['cost_sum']/1000000
+    df_grouped['cost_sum'] = df_grouped['cost_sum']/1000000
+    df_grouped['avg_ctr'] = df_grouped['clicks_sum']/df_grouped['impressions_sum']
+    df_grouped['avg_cpc'] = df_grouped['cost_sum']/df_grouped['clicks_sum']
+    df_grouped['total_cost'] = df_grouped['cost_sum']
+    df_grouped['total_clicks'] = df_grouped['clicks_sum']
+    df_grouped['total_impressions'] = df_grouped['impressions_sum']
+    df_grouped['avg_clicks'] = df_grouped['clicks_mean']
+    df_grouped['avg_cost'] = df_grouped['cost_mean']
+    
+    df_grouped = df_grouped.drop(['week_num','clicks_sum', 'impressions_sum', 'cost_sum', 'cost_mean', 'clicks_mean'], axis=1)
+    df_grouped = df_grouped.fillna(0)
+    df_grouped = df_grouped[df_grouped.avg_cpc > 0]
+    
+    df_train = df_grouped.drop(['avg_cpc', 'avg_ctr'], axis=1)
+    
+    train_data = df_grouped[group_by_fields + ['avg_cpc']]
+    
+    train_labels = df_grouped['avg_ctr']
+    
+    cat_features = [i for i in range(len(group_by_fields))]
+    model = CatBoostRegressor(iterations=1000)
+    model.fit(train_data,
+              train_labels,
+              cat_features,
+              verbose=True)
+    
+    train_preds = model.predict(train_data)
+    print(np.sqrt(mean_squared_error(train_labels, train_preds)))
+    # train the bandit example
+    bandit = ContextualContinuumArmedBandit(df_train, model, bid_max_value=1.0)
+    
+    dill.dump(bandit, open("./data/ContextualContinuumArmedBanditCloud_JOT.dill", "wb"))
+    
 def train_local(dataset_name):
     """
     Example usage of models, oracle models etc.training them using a locally downloaded CSV file in the form of the JOT Google Ads
