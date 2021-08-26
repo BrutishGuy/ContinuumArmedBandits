@@ -287,6 +287,23 @@ def example_usage(filename):
 
     """
     df = pd.read_csv(filename)
+    df.columns = [client_id,
+                  campaign_id,
+                  group_id,
+                  account_descriptive_name,
+                  ad_network_type,
+                  avg_position,
+                  campaign_name,
+                  city_criteria_id,
+                  clicks,
+                  cost,
+                  impressions,
+                  country_criteria_id,
+                  date,
+                  device,
+                  external_customer_id,
+                  metro_criteria_id,
+                  region_criteria_id]
     df['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d')
     df['week_day'] = df['date'].dt.day_name()
     df['week_num'] = df['date'].dt.week
@@ -320,7 +337,7 @@ def example_usage(filename):
     df_grouped['avg_clicks'] = df_grouped['clicks_mean']
     df_grouped['avg_cost'] = df_grouped['cost_mean']
     
-    df_grouped = df_grouped.drop(['clicks_sum', 'impressions_sum', 'cost_sum', 'cost_mean', 'clicks_mean'], axis=1)
+    df_grouped = df_grouped.drop(['week_num','clicks_sum', 'impressions_sum', 'cost_sum', 'cost_mean', 'clicks_mean'], axis=1)
     df_grouped = df_grouped.fillna(0)
     df_grouped = df_grouped[df_grouped.avg_cpc > 0]
     
