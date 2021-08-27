@@ -6,6 +6,7 @@ from catboost import CatBoostClassifier, CatBoostRegressor
 from sklearn.metrics import mean_squared_error
 import dill 
 import argparse
+import datetime
 
 from google.cloud import bigquery
 
@@ -60,10 +61,10 @@ class ContextualContinuumArmedBandit:
             df_context = df_context.loc[df_context.index.repeat(len(X))].reset_index(drop=True)
             df_context = pd.concat([df_context, pd.DataFrame({'avg_cpc': X})], axis = 1)
             
-            if not type(oracle) == google.cloud.aiplatform.models.Endpoint:
-                y_pred = oracle.predict(df_context)
-            else:
-                y_preds = oracle.predict(instances=[df_context.to_json()])
+            #if not type(oracle) == google.cloud.aiplatform.models.Endpoint:
+            y_pred = oracle.predict(df_context)
+            #else:
+            #    y_preds = oracle.predict(instances=[df_context.to_json()])
             # setting y to be a 2D matrix to match the dimensions of X when calculating the alpha parameter
             y_pred = np.atleast_2d(y_pred).T
             self.context_dict[self.context_ids[context_id]] = (ContinuumArmedBandit(X_pred, y_pred , convergence_rate=1.0), None, None)
@@ -273,7 +274,12 @@ class ContextualContinuumArmedBandit:
                 print("ERROR: Unsampled or unseen context, please update or re-fit the model with the context included.")
                 raise
       
-def train_gcp(dataset_name, model_path, gcp_creds):
+def train_gcp(dataset_name='./data/results-20210826-175504.csv', 
+              model_path = './data/ContextualContinuumArmedBanditCloud_JOT.dill', 
+              gcp_creds =   {'location':"europe-west4",
+                             'api_endpoint':"eu-west4-aiplatform.googleapis.com",
+                             'project':'aa-cmab-product',
+                             'endpoint_id': '5076928970558013440'}):
     """
     Example usage of models, oracle models etc.training them using a locally downloaded CSV file in the form of the JOT Google Ads
     file data schema (see ./docs/data_docs/). We preprocess the raw docs in the form that it is done to put it into the BigQuery ProductionProcessedData table
@@ -296,7 +302,7 @@ def train_gcp(dataset_name, model_path, gcp_creds):
     -------
 
     """
-    bqclient = bigquery.Client()
+    bqclient = bigquery.Client(gcp_creds)
 
     # Download a table.
     table = bigquery.TableReference.from_string(
@@ -305,8 +311,24 @@ def train_gcp(dataset_name, model_path, gcp_creds):
     rows = bqclient.list_rows(
         table,
         selected_fields=[
-            bigquery.SchemaField("country_name", "STRING"),
-            bigquery.SchemaField("fips_code", "STRING"),
+            bigquery.SchemaField("client_id", "STRING"),
+            bigquery.SchemaField("campaign_id", "STRING"),
+            bigquery.SchemaField("group_id", "STRING"),
+            bigquery.SchemaField("account_descriptive_name", "STRING"),
+            bigquery.SchemaField("ad_network_type", "STRING"),
+            bigquery.SchemaField("avg_position", "FLOAT"),
+            bigquery.SchemaField("campaign_name", "STRING"),
+            bigquery.SchemaField("city_criteria_id", "STRING"),
+            bigquery.SchemaField("clicks", "INTEGER"),
+            bigquery.SchemaField("cost", "FLOAT"),
+            bigquery.SchemaField("impressions", "INTEGER"),
+            bigquery.SchemaField("country_criteria_id", "STRING"),
+            bigquery.SchemaField("date", "DATE"),
+            bigquery.SchemaField("device", "STRING"),
+            bigquery.SchemaField("external_customer_id", "STRING"),
+            bigquery.SchemaField("metro_criteria_id", "STRING"),
+            bigquery.SchemaField("region_criteria_id", "STRING")
+
         ],
     )
     df = rows.to_dataframe(
@@ -314,27 +336,28 @@ def train_gcp(dataset_name, model_path, gcp_creds):
         # google-cloud-bigquery version 1.26.0 and above, the BigQuery Storage
         # API is used by default.
         create_bqstorage_client=True)
-    df.columns = [client_id,
-                  campaign_id,
-                  group_id,
-                  account_descriptive_name,
-                  ad_network_type,
-                  avg_position,
-                  campaign_name,
-                  city_criteria_id,
-                  clicks,
-                  cost,
-                  impressions,
-                  country_criteria_id,
-                  date,
-                  device,
-                  external_customer_id,
-                  metro_criteria_id,
-                  region_criteria_id]
+    
+    df.columns = ['client_id',
+                  'campaign_id',
+                  'group_id',
+                  'account_descriptive_name',
+                  'ad_network_type',
+                  'avg_position',
+                  'campaign_name',
+                  'city_criteria_id',
+                  'clicks',
+                  'cost',
+                  'impressions',
+                  'country_criteria_id',
+                  'date',
+                  'device',
+                  'external_customer_id',
+                  'metro_criteria_id',
+                  'region_criteria_id']
 
     df['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d')
     df['week_day'] = df['date'].dt.day_name()
-    df['week_num'] = df['date'].dt.week
+    df['weekday_num'] = df['date'].dt.week
     
     id_fields = ['client_id', 'campaign_id', 'group_id', 'city_criteria_id',
            'country_criteria_id', 'external_customer_id', 'metro_criteria_id',
@@ -350,7 +373,7 @@ def train_gcp(dataset_name, model_path, gcp_creds):
     'campaign_id', 
     'campaign_name',  
     'week_day',
-    'week_num']
+    'weekday_num']
     
     
     df_grouped = df.groupby(group_by_fields).agg({'clicks': ['mean', 'sum'], 'impressions': 'sum', 'cost': ['mean', 'sum']}).reset_index()
@@ -365,12 +388,13 @@ def train_gcp(dataset_name, model_path, gcp_creds):
     df_grouped['avg_clicks'] = df_grouped['clicks_mean']
     df_grouped['avg_cost'] = df_grouped['cost_mean']
     
-    df_grouped = df_grouped.drop(['week_num','clicks_sum', 'impressions_sum', 'cost_sum', 'cost_mean', 'clicks_mean'], axis=1)
+    df_grouped = df_grouped.drop(['weekday_num','clicks_sum', 'impressions_sum', 'cost_sum', 'cost_mean', 'clicks_mean'], axis=1)
     df_grouped = df_grouped.fillna(0)
     df_grouped = df_grouped[df_grouped.avg_cpc > 0]
     
     df_train = df_grouped.drop(['avg_cpc', 'avg_ctr'], axis=1)
     
+    group_by_fields.remove('weekday_num')
     train_data = df_grouped[group_by_fields + ['avg_cpc']]
     
     train_labels = df_grouped['avg_ctr']
@@ -407,28 +431,28 @@ def train_local(dataset_name):
     -------
 
     """
-    df = pd.read_csv(filename)
-    df.columns = [client_id,
-                  campaign_id,
-                  group_id,
-                  account_descriptive_name,
-                  ad_network_type,
-                  avg_position,
-                  campaign_name,
-                  city_criteria_id,
-                  clicks,
-                  cost,
-                  impressions,
-                  country_criteria_id,
-                  date,
-                  device,
-                  external_customer_id,
-                  metro_criteria_id,
-                  region_criteria_id]
+    df = pd.read_csv(dataset_name, delimeter='\t')
+    df.columns = ['client_id',
+                  'campaign_id',
+                  'group_id',
+                  'account_descriptive_name',
+                  'ad_network_type',
+                  'avg_position',
+                  'campaign_name',
+                  'city_criteria_id',
+                  'clicks',
+                  'cost',
+                  'impressions',
+                  'country_criteria_id',
+                  'date',
+                  'device',
+                  'external_customer_id',
+                  'metro_criteria_id',
+                  'region_criteria_id']
 
     df['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d')
     df['week_day'] = df['date'].dt.day_name()
-    df['week_num'] = df['date'].dt.week
+    df['weekday_num'] = df['date'].dt.week
     
     id_fields = ['client_id', 'campaign_id', 'group_id', 'city_criteria_id',
            'country_criteria_id', 'external_customer_id', 'metro_criteria_id',
@@ -444,7 +468,7 @@ def train_local(dataset_name):
     'campaign_id', 
     'campaign_name',  
     'week_day',
-    'week_num']
+    'weekday_num']
     
     
     df_grouped = df.groupby(group_by_fields).agg({'clicks': ['mean', 'sum'], 'impressions': 'sum', 'cost': ['mean', 'sum']}).reset_index()
@@ -459,11 +483,13 @@ def train_local(dataset_name):
     df_grouped['avg_clicks'] = df_grouped['clicks_mean']
     df_grouped['avg_cost'] = df_grouped['cost_mean']
     
-    df_grouped = df_grouped.drop(['week_num','clicks_sum', 'impressions_sum', 'cost_sum', 'cost_mean', 'clicks_mean'], axis=1)
+    df_grouped = df_grouped.drop(['weekday_num','clicks_sum', 'impressions_sum', 'cost_sum', 'cost_mean', 'clicks_mean'], axis=1, errors='ignore')
     df_grouped = df_grouped.fillna(0)
     df_grouped = df_grouped[df_grouped.avg_cpc > 0]
     
     df_train = df_grouped.drop(['avg_cpc', 'avg_ctr'], axis=1)
+    
+    group_by_fields.remove('weekday_num')
     
     train_data = df_grouped[group_by_fields + ['avg_cpc']]
     
@@ -477,7 +503,9 @@ def train_local(dataset_name):
               verbose=True)
     
     train_preds = model.predict(train_data)
-    print(np.sqrt(mean_squared_error(train_labels, train_preds)))
+    print('RMSE error of catboost oracle: ' + str(np.sqrt(mean_squared_error(train_labels, train_preds))))
+    print('Median of target variable: ' + str(np.median(train_labels)))
+    print('Mean of target variable: ' + str(np.mean(train_labels)))
     # train the bandit example
     bandit = ContextualContinuumArmedBandit(df_train, model, bid_max_value=1.0)
     
@@ -497,27 +525,28 @@ def example_usage(filename):
     -------
 
     """
-    df = pd.read_csv(filename)
-    df.columns = [client_id,
-                  campaign_id,
-                  group_id,
-                  account_descriptive_name,
-                  ad_network_type,
-                  avg_position,
-                  campaign_name,
-                  city_criteria_id,
-                  clicks,
-                  cost,
-                  impressions,
-                  country_criteria_id,
-                  date,
-                  device,
-                  external_customer_id,
-                  metro_criteria_id,
-                  region_criteria_id]
+    df = pd.read_csv(filename, delimeter='\t')
+    df.columns = ['client_id',
+                  'campaign_id',
+                  'group_id',
+                  'account_descriptive_name',
+                  'ad_network_type',
+                  'avg_position',
+                  'campaign_name',
+                  'city_criteria_id',
+                  'clicks',
+                  'cost',
+                  'impressions',
+                  'country_criteria_id',
+                  'date',
+                  'device',
+                  'external_customer_id',
+                  'metro_criteria_id',
+                  'region_criteria_id']
+    
     df['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d')
     df['week_day'] = df['date'].dt.day_name()
-    df['week_num'] = df['date'].dt.week
+    df['weekday_num'] = df['date'].dt.week
     
     id_fields = ['client_id', 'campaign_id', 'group_id', 'city_criteria_id',
            'country_criteria_id', 'external_customer_id', 'metro_criteria_id',
@@ -533,7 +562,7 @@ def example_usage(filename):
     'campaign_id', 
     'campaign_name',  
     'week_day',
-    'week_num']
+    'weekday_num']
     
     
     df_grouped = df.groupby(group_by_fields).agg({'clicks': ['mean', 'sum'], 'impressions': 'sum', 'cost': ['mean', 'sum']}).reset_index()
@@ -548,12 +577,13 @@ def example_usage(filename):
     df_grouped['avg_clicks'] = df_grouped['clicks_mean']
     df_grouped['avg_cost'] = df_grouped['cost_mean']
     
-    df_grouped = df_grouped.drop(['week_num','clicks_sum', 'impressions_sum', 'cost_sum', 'cost_mean', 'clicks_mean'], axis=1)
+    df_grouped = df_grouped.drop(['weekday_num','clicks_sum', 'impressions_sum', 'cost_sum', 'cost_mean', 'clicks_mean'], axis=1, errors='ignore')
     df_grouped = df_grouped.fillna(0)
     df_grouped = df_grouped[df_grouped.avg_cpc > 0]
     
     df_train = df_grouped.drop(['avg_cpc', 'avg_ctr'], axis=1)
     
+    group_by_fields.remove('weekday_num')
     train_data = df_grouped[group_by_fields + ['avg_cpc']]
     
     train_labels = df_grouped['avg_ctr']
@@ -571,10 +601,7 @@ def example_usage(filename):
     
     # test the bandit example
     bandit = ContextualContinuumArmedBandit(df_sample, model, bid_max_value=1.0)
-    
-    y_reward_sample = 0.01 + 0.1*np.random.random(df_sample.shape[0])
-    X_action_sample = 0.05 + 0.5*np.random.random(df_sample.shape[0])
-    
+
     preds = bandit.predict(df_sample)
     bandit.update(df_sample, X_action_sample, y_reward_sample)
     
@@ -587,15 +614,18 @@ def example_usage(filename):
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--data_filename', type=str, default='results-20210821-175504', help='Enter filename of data to be used in re-training the model')
+    parser.add_argument('--data_filename', type=str, default='results-20210821-175504.csv', help='Enter filename of data to be used in re-training the model')
     parser.add_argument('--model_filename', type=str, default='./data/ContextualContinuumArmedBanditCloud_JOT.dill', help='Enter filename and path of model to be used in re-training')
+    parser.add_argument('--delimeter', type=str, default='\t', help='Enter the delimeter used in the file you wish to read into the training and prediction process.')
+    
     opt_gen = parser.parse_args()
 
 
-    df = pd.read_csv(opt_gen.data_filename)
+    df = pd.read_csv(opt_gen.data_filename, delimiter=opt_gen.delimeter)
+    
     df['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d')
     df['week_day'] = df['date'].dt.day_name()
-    df['week_num'] = df['date'].dt.week
+    df['weekday_num'] = df['date'].dt.week
     
     id_fields = ['client_id', 'campaign_id', 'group_id', 'city_criteria_id',
            'country_criteria_id', 'external_customer_id', 'metro_criteria_id',
@@ -610,8 +640,7 @@ if __name__ == "__main__":
     'ad_network_type',
     'campaign_id', 
     'campaign_name',  
-    'week_day',
-    'week_num']
+    'week_day']
     
     
     df_grouped = df.groupby(group_by_fields).agg({'clicks': ['mean', 'sum'], 'impressions': 'sum', 'cost': ['mean', 'sum']}).reset_index()

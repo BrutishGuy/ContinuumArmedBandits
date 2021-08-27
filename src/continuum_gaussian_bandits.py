@@ -162,6 +162,22 @@ class ContinuumArmedBandit:
 
 
     def get_derivative_mean(self, x, X):
+        """
+        Retrieves the model kernel for the dataset X provided. TODO: update this method to simply use self.X. 
+        At the moment uses a user provided X, which in this case is self.X passed internally among the class methods.
+        
+
+        Parameters
+        ----------
+        X : array(n_samples, ) 
+            An array of points which correspond to the action points to update the model with
+            
+        Returns
+        -------
+        kernel : sklearn.gaussian_process.kernels types
+            A kernel class which consists of the kernel matrix with normalized length scales along each dimension of X, determined by X.shape[1] of course. 
+            it is a combination between a radial basis function kernel and some white noise
+        """
         der_mean = 0
         W = self.gpr.W
         k = self.gpr.k
@@ -171,12 +187,44 @@ class ContinuumArmedBandit:
 
 
     def get_merit(self, x, X):
+        """
+        Retrieves the model kernel for the dataset X provided. TODO: update this method to simply use self.X. 
+        At the moment uses a user provided X, which in this case is self.X passed internally among the class methods.
+        
+
+        Parameters
+        ----------
+        X : array(n_samples, ) 
+            An array of points which correspond to the action points to update the model with
+            
+        Returns
+        -------
+        kernel : sklearn.gaussian_process.kernels types
+            A kernel class which consists of the kernel matrix with normalized length scales along each dimension of X, determined by X.shape[1] of course. 
+            it is a combination between a radial basis function kernel and some white noise
+        """
         mean = self.get_mean(x, X)
         var = self.get_std(x, X)
         merit = mean + var
         return merit
     
     def predict(self):
+        """
+        Retrieves the model kernel for the dataset X provided. TODO: update this method to simply use self.X. 
+        At the moment uses a user provided X, which in this case is self.X passed internally among the class methods.
+        
+
+        Parameters
+        ----------
+        X : array(n_samples, ) 
+            An array of points which correspond to the action points to update the model with
+            
+        Returns
+        -------
+        kernel : sklearn.gaussian_process.kernels types
+            A kernel class which consists of the kernel matrix with normalized length scales along each dimension of X, determined by X.shape[1] of course. 
+            it is a combination between a radial basis function kernel and some white noise
+        """
         test_x = np.linspace(0.01, np.max(self.X))
         
         val_pred, val_var = self.predict_reward(np.atleast_2d(test_x).T)
@@ -189,6 +237,22 @@ class ContinuumArmedBandit:
         
     
     def predict_reward(self, x_arr):
+        """
+        Retrieves the model kernel for the dataset X provided. TODO: update this method to simply use self.X. 
+        At the moment uses a user provided X, which in this case is self.X passed internally among the class methods.
+        
+
+        Parameters
+        ----------
+        X : array(n_samples, ) 
+            An array of points which correspond to the action points to update the model with
+            
+        Returns
+        -------
+        kernel : sklearn.gaussian_process.kernels types
+            A kernel class which consists of the kernel matrix with normalized length scales along each dimension of X, determined by X.shape[1] of course. 
+            it is a combination between a radial basis function kernel and some white noise
+        """
         val_pred = []
         val_var = []
         for x in x_arr:
@@ -199,6 +263,22 @@ class ContinuumArmedBandit:
         return val_pred, val_var
 
     def get_mean(self, x, X):
+        """
+        Retrieves the model kernel for the dataset X provided. TODO: update this method to simply use self.X. 
+        At the moment uses a user provided X, which in this case is self.X passed internally among the class methods.
+        
+
+        Parameters
+        ----------
+        X : array(n_samples, ) 
+            An array of points which correspond to the action points to update the model with
+            
+        Returns
+        -------
+        kernel : sklearn.gaussian_process.kernels types
+            A kernel class which consists of the kernel matrix with normalized length scales along each dimension of X, determined by X.shape[1] of course. 
+            it is a combination between a radial basis function kernel and some white noise
+        """
         mean = 0
         k = self.gpr.k
         for j in range(self.N):
@@ -206,6 +286,23 @@ class ContinuumArmedBandit:
         return mean
 
     def get_std(self, x, X):
+        """
+        Retrieves the model kernel for the dataset X provided. TODO: update this method to simply use self.X. 
+        At the moment uses a user provided X, which in this case is self.X passed internally among the class methods.
+        
+
+        Parameters
+        ----------
+        X : array(n_samples, ) 
+            An array of points which correspond to the action points to update the model with
+            
+        Returns
+        -------
+        kernel : sklearn.gaussian_process.kernels types
+            A kernel class which consists of the kernel matrix with normalized length scales along each dimension of X, determined by X.shape[1] of course. 
+            it is a combination between a radial basis function kernel and some white noise
+        """
+        
         k = self.gpr.k
         k_prime = self.gpr.k_prime
         kxx = k(x,x)
@@ -217,15 +314,63 @@ class ContinuumArmedBandit:
         return var
         
     def calc_alpha(self, K, noise_var, y):
+        """
+        Retrieves the model kernel for the dataset X provided. TODO: update this method to simply use self.X. 
+        At the moment uses a user provided X, which in this case is self.X passed internally among the class methods.
+        
+
+        Parameters
+        ----------
+        X : array(n_samples, ) 
+            An array of points which correspond to the action points to update the model with
+            
+        Returns
+        -------
+        kernel : sklearn.gaussian_process.kernels types
+            A kernel class which consists of the kernel matrix with normalized length scales along each dimension of X, determined by X.shape[1] of course. 
+            it is a combination between a radial basis function kernel and some white noise
+        """
         alpha = np.linalg.inv((K + noise_var * np.eye(self.N))).dot(y)
         return alpha
     
     def calc_gamma(self, K, noise_var, X):
+        """
+        Retrieves the kernel matrix for the dataset X provided. TODO: update this method to simply use self.X. 
+        At the moment uses a user provided X, which in this case is self.X passed internally among the class methods.
+        
+
+        Parameters
+        ----------
+        X : array(n_samples, ) 
+            An array of points which correspond to the action points to update the model with
+            
+        Returns
+        -------
+        kernel : array(n_actions, n_actions) type, n_action = X.shape[0]
+            A kernel matrix with shape the first dimension of X, determined by X.shape[0] of course. 
+            it is a matrix which applies the kernel function of choice to each point in the data
+        """
         beta = self.get_Beta(X)
         gamma = np.multiply(np.linalg.inv((K + noise_var * np.eye(self.N))), beta)
         return gamma
     
     def get_Beta(self, X):
+        """
+        Retrieves the Beta matrix for the dataset X provided. TODO: update this method to simply use self.X. 
+        At the moment uses a user provided X, which in this case is self.X passed internally among the class methods.
+        
+
+        Parameters
+        ----------
+        X : array(n_samples, ) 
+            An array of points which correspond to the action points to update the model with
+            
+        Returns
+        -------
+        Beta : array(n_actions, n_actions) type, n_action = X.shape[0]
+            A beta matrix with shape the first dimension of X, determined by X.shape[0] of course. 
+            it is a matrix which applies the beta function of choice to each point in the data
+        """
         N = X.shape[0]
         Beta = np.zeros((N,N))
         for i in range(N):
@@ -234,11 +379,43 @@ class ContinuumArmedBandit:
         return Beta
     
     def beta(self, x1, x2):
+        """
+        Retrieves the beta coefficient between x1 and x2, which is an unscaled kernel function between them used in calculating self.beta
+
+        Parameters
+        ----------
+        x1 : float 
+            A specific point to calculate beta_x1x2  
+        x2 : float 
+            A specific point to calculate beta_x1x2
+            
+        Returns
+        -------
+        beta_x1x2 : float
+            The average  beta for x1, x2
+        """
         W = self.gpr.W
         beta_x1x2 = np.exp(-0.25 * (x1 - x2).T.dot(W).dot(x1 - x2))
         return beta_x1x2
 
     def get_q_mean(self, x, X):
+        """
+        Calculates the mean q value or q parameter of x given data X, using the second kernel function derivative.
+        
+        This can be interpreted as the average change in the slope relative to other data points
+        
+        Parameters
+        ----------
+        x : float
+            A specific point to calculate q at relative to X
+        X : array(n_samples, ) 
+            An array of points which correspond to the action points to update the model with
+            
+        Returns
+        -------
+        q_mean : float
+            The average value of q for x given X
+        """
         q_mean = 0
         kpp = self.gpr.k_prime_prime
         for i in range(self.N):
@@ -304,7 +481,14 @@ class GPR(GaussianProcessRegressor):
         Retrieves the model kernel for the dataset X provided. TODO: update this method to simply use self.X. 
         At the moment uses a user provided X, which in this case is self.X passed internally among the class methods.
         
-
+        Notes
+        -----
+        
+        TODO: Adjust the kernel to be problem specific. This is very hard to do generally, as it requires domain specific knowledge in ranges of values
+        your features will take. See here for more explanation. 
+        
+        SEE HERE: https://github.com/scikit-learn/scikit-learn/issues/7563
+        
         Parameters
         ----------
         X : array(n_samples, ) 
@@ -318,7 +502,8 @@ class GPR(GaussianProcessRegressor):
         """
         length_scale = np.random.normal(loc=1.0,scale=.1,size=X.shape[1])
         rbf = kernels.RBF(length_scale=length_scale)
-        wk = kernels.WhiteKernel()
+        # we set these particular levels of noise to ensure better convergence of the GPR (tested in practice to work better)
+        wk = kernels.WhiteKernel(noise_level=1e-5, noise_level_bounds=(1e-10, 1e-4))
         kernel = rbf + wk
         return kernel
 
