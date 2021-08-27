@@ -37,7 +37,7 @@ class ContinuumArmedBandit:
         -------
             
         """
-        self.X = X.copy()
+        self.X = X
         self.y = y.copy() # set X and y as local parameters
         self.gpr = GPR(self.X, self.y, convergence_rate=convergence_rate) # define our custom defined GaussianProcessRegressor model
         self.N = self.X.shape[0]
@@ -77,8 +77,8 @@ class ContinuumArmedBandit:
         -------
 
         """
-        self.X = np.append(self.X, X) # append copies of this dataset in the locally stored class values
-        self.y = np.append(self.y, y) 
+        self.X = np.vstack((self.X, X)) # append copies of this dataset in the locally stored class values
+        self.y = np.vstack((self.y, y))
         self.gpr = GPR(self.X, self.y, convergence_rate=self.convergence_rate)
         self.N = self.X.shape[0] # update dataset size convenience parameter
 
@@ -470,7 +470,7 @@ class GPR(GaussianProcessRegressor):
         """
         
         self.X = np.vstack((self.X, X.copy()))
-        self.y = np.append(self.y, y.copy())
+        self.y = np.vstack((self.y, y.copy()))
         self.fit(self.X, self.y)
         self.update_W()
         self.update_K(self.X)
