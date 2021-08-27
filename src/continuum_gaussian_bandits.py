@@ -77,8 +77,8 @@ class ContinuumArmedBandit:
         -------
 
         """
-        self.X = self.X.append(X) # append copies of this dataset in the locally stored class values
-        self.y = self.y.append(y) 
+        self.X = np.append(self.X, X) # append copies of this dataset in the locally stored class values
+        self.y = np.append(self.y, y) 
         self.gpr = GPR(self.X, self.y, convergence_rate=self.convergence_rate)
         self.N = self.X.shape[0] # update dataset size convenience parameter
 
